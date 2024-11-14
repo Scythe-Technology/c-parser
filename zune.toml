@@ -1,0 +1,30 @@
+# Zune Configuration
+
+# Debug settings
+#  This affects the way Zune handles errors and debug information.
+[runtime.debug]
+detailedError=true
+
+# Require settings
+#  This affects the way Zune loads files.
+[resolvers.require]
+mode="RelativeToFile"
+
+# Formatter settings
+#  This affects the output of the formatter while printing.
+[resolvers.formatter]
+maxDepth=4
+useColor=true
+showTableAddress=true
+showRecursiveTable=true
+displayBufferContentsMax=48
+
+# Compiling settings
+#  This affects all required files and the main file.
+[compiling]
+debugLevel=2
+optimizationLevel=1
+nativeCodeGen=true
+
+[experimental]
+ffi=true
