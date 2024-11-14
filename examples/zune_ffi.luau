@@ -42,36 +42,20 @@ local function readType(state: ReaderState, types: parser.TypePack): number | St
         return ffi.types.pointer;
     elseif (last.type == parser.lexer.KEYWORD) then
         local sub_type = if (#types > 1) then types[#types - 1] else nil;
-        if (last.value == "int") then
-            if (sub_type and sub_type.value == "unsigned") then
-                return ffi.types.u32;
-            end
-            return ffi.types.i32;
-        elseif (last.value == "short") then
-            if (sub_type and sub_type.value == "unsigned") then
-                return ffi.types.u16;
-            end
-            return ffi.types.i16;
-        elseif (last.value == "long") then
-            if (sub_type and sub_type.value == "unsigned") then
-                return ffi.types.u64;
-            end
-            return ffi.types.i64;
-        elseif (last.value == "float") then
-            return ffi.types.float;
-        elseif (last.value == "double") then
-            return ffi.types.double;
-        elseif (last.value == "void") then
-            return ffi.types.void;
-        elseif (last.value == "char") then
-            if (sub_type and sub_type.value == "unsigned") then
-                return ffi.types.u8;
-            end
-            return ffi.types.i8;
-        elseif (last.value == "bool") then
-            return ffi.types.u8;
+        local type_map = {
+            int = sub_type and sub_type.value == "unsigned" and ffi.types.u32 or ffi.types.i32,
+            short = sub_type and sub_type.value == "unsigned" and ffi.types.u16 or ffi.types.i16,
+            long = sub_type and sub_type.value == "unsigned" and ffi.types.u64 or ffi.types.i64,
+            float = ffi.types.float,
+            double = ffi.types.double,
+            void = ffi.types.void,
+            char = sub_type and sub_type.value == "unsigned" and ffi.types.u8 or ffi.types.i8,
+            bool = ffi.types.u8,
+        }
+        if (type_map[last.value]) then
+            return type_map[last.value];
         end
-        error(`Unhandled Type: {last.value}`);
+        error(`Unhandled Type: {last.value}`)
     elseif (last.type == parser.STRUCT_TYPE) then
         local struct = state.structs[last.value];
         assert(struct, `Unknown struct: {last.value}`)
