@@ -1,11 +1,10 @@
 --!strict
 --[=[
-    C to FFI api for Zune
+    C to FFI api for Lune
       by Sythivo
 --]=]
 
-local ffi = zune.ffi;
-assert(ffi, "Zune FFI is required");
+local ffi = require("@lune/ffi");
 
 local parser = require("../src");
 
@@ -13,44 +12,46 @@ local ffi_transpiler = {};
 
 export type FFILibrary = {}
 
-type StructRegistry = { [string]: Structure };
+type StructRegistry = { [string]: ffi.CStructInfo };
 
 type ReaderState = {
     state: parser.State,
     structs: StructRegistry,
-    aliases: { [string]: number | Structure },
+    aliases: { [string]: ffi.CTypes },
 };
 
 local TYPE_NAME = {
-    [ffi.types.i8] = "i8",
-    [ffi.types.i16] = "i16",
-    [ffi.types.i32] = "i32",
-    [ffi.types.i64] = "i64",
-    [ffi.types.u8] = "u8",
-    [ffi.types.u16] = "u16",
-    [ffi.types.u32] = "u32",
-    [ffi.types.u64] = "u64",
-    [ffi.types.float] = "float",
-    [ffi.types.double] = "double",
-    [ffi.types.void] = "void",
-    [ffi.types.pointer] = "pointer",
+    [ffi.c.char] = "i8",
+    [ffi.c.short] = "i16",
+    [ffi.c.int] = "i32",
+    [ffi.c.long] = "i64",
+    [ffi.c.uchar] = "u8",
+    [ffi.c.ushort] = "u16",
+    [ffi.c.uint] = "u32",
+    [ffi.c.ulong] = "u64",
+    [ffi.f32] = "float",
+    [ffi.f64] = "double",
+    [ffi.c.void] = "void",
 }
 
-local function readType(state: ReaderState, types: parser.TypePack): number | Structure
+local function readType(state: ReaderState, types: parser.TypePack): ffi.CTypes
     local last = types[#types];
     if (last.type == parser.lexer.OPERATOR and last.value == "*") then
-        return ffi.types.pointer;
+        local trimmed = table.clone(types);
+        table.remove(trimmed, #trimmed);
+        local type = readType(state, trimmed);
+        return (type::any):ptr();
     elseif (last.type == parser.lexer.KEYWORD) then
         local sub_type = if (#types > 1) then types[#types - 1] else nil;
         local type_map = {
-            int = sub_type and sub_type.value == "unsigned" and ffi.types.u32 or ffi.types.i32,
-            short = sub_type and sub_type.value == "unsigned" and ffi.types.u16 or ffi.types.i16,
-            long = sub_type and sub_type.value == "unsigned" and ffi.types.u64 or ffi.types.i64,
-            float = ffi.types.float,
-            double = ffi.types.double,
-            void = ffi.types.void,
-            char = sub_type and sub_type.value == "unsigned" and ffi.types.u8 or ffi.types.i8,
-            bool = ffi.types.u8,
+            int = sub_type and sub_type.value == "unsigned" and ffi.c.uint or ffi.c.int,
+            short = sub_type and sub_type.value == "unsigned" and ffi.c.ushort or ffi.c.short,
+            long = sub_type and sub_type.value == "unsigned" and ffi.c.ulong or ffi.c.long,
+            float = ffi.f32,
+            double = ffi.f64,
+            void = ffi.c.void,
+            char = sub_type and sub_type.value == "unsigned" and ffi.c.uchar or ffi.c.char,
+            bool = ffi.c.uchar,
         }
         if (type_map[last.value]) then
             return type_map[last.value];
@@ -70,7 +71,7 @@ function ffi_transpiler.openLib(file: string, def: string)
     local exported_fns = {};
     local fn_types = {};
     local struct_registry = {};
-    local aliases = {};
+    local aliases :{ [string]: ffi.CTypes } = {};
     local reader_state = {
         state = state,
         structs = struct_registry,
@@ -78,13 +79,11 @@ function ffi_transpiler.openLib(file: string, def: string)
     };
 
     for struct_name, struct_info in state.struct_types do
-        local fields : {{[string]: Structure | number}} = {};
+        local fields : {ffi.CTypes} = {};
         for i, field in struct_info.fields do
-            table.insert(fields, {
-                [field.name] = readType(reader_state, field.type)
-            });
+            table.insert(fields, readType(reader_state, field.type));
         end
-        struct_registry[struct_name] = ffi.struct(fields);
+        struct_registry[struct_name] = ffi.c.struct(fields);
         TYPE_NAME[struct_registry[struct_name]::any] = struct_name;
     end
 
@@ -101,7 +100,7 @@ function ffi_transpiler.openLib(file: string, def: string)
     end
 
     for alias_name, alias_type in state.type_aliases do
-        aliases[alias_name] = readType(reader_state, alias_type);
+        aliases[alias_name] = readType(reader_state, alias_type)::any;
     end
 
     for fn_name, fn_type in state.fns do
@@ -116,12 +115,14 @@ function ffi_transpiler.openLib(file: string, def: string)
         };
     end
 
-    local library = ffi.dlopen(file, exported_fns);
+    local library = ffi.open(file);
 
     local exported = {}
 
-    for name, _ in exported_fns do
-        exported[name] = library[name];
+    for name, fn in exported_fns do
+        local ref = library:find(name);
+        local d = ffi.c.fn(fn.args, fn.returns);
+        exported[name] = d:callable(ref);
     end
 
     return {
@@ -134,8 +135,9 @@ function ffi_transpiler.openLib(file: string, def: string)
     };
 end
 
-if (zune and zune.testing.running) then
-    -- based on https://github.com/Scythe-Technology/Zune/blob/8252033c7097597806e59f07db41dbd8d71a8021/test/standard/ffi/sample.zig
+local TESTING = true;
+
+if (TESTING) then
     local sample = ffi_transpiler.openLib("./libsample.so", [[
         struct Foo {
             int x, y;
@@ -158,24 +160,27 @@ if (zune and zune.testing.running) then
 
     local Foo = sample.structs.Foo;
     print(Foo);
-    print(Foo:offset("x"));
-    print(Foo:offset("y"));
+    print(Foo:offset(0));
+    print(Foo:offset(1));
 
-    print(sample.exported.add(1, 2));
+    local result = ffi.c.int:box(0);
+    local a = ffi.c.int:box(1);
+    local b = ffi.c.int:box(2);
+    sample.exported.add(result, a:ref(), b:ref());
+    print(ffi.c.int:readData(result, 0));
 
-    local out = ffi.alloc(ffi.sizeOf(ffi.types.i32)):release();
-    sample.exported.add_ptr(out, 52);
-    print(out:readi32());
+    local out = ffi.c.int:box(0);
+    ffi.c.int:writeData(a, 52, 0);
+    sample.exported.add_ptr(nil, out:ref():ref(), a:ref());
+    print(ffi.c.int:readData(out, 0));
 
-    print(sample.exported.check_struct(Foo:new({
-        x = 1,
-        y = 2,
-    })));
+    local result2 = ffi.c.uchar:box(0);
+    sample.exported.check_struct(result2, Foo:box({1, 2}):ref());
+    print(ffi.c.uchar:readData(result2, 0));
 
-    print(sample.exported.check_struct(Foo:new({
-        x = 2,
-        y = 2,
-    })));
+    local result3 = ffi.c.uchar:box(0);
+    sample.exported.check_struct(result3, Foo:box({2, 2}):ref());
+    print(ffi.c.uchar:readData(result3, 0));
 end
 
 return ffi_transpiler;
