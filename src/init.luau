@@ -50,26 +50,13 @@ function parser.nextDelimiter(state: State, type: TypeInfo, value: string?): num
     return index;
 end
 
-function parser.checkTokensEql(tokens: {Token}, typesToCheck: {TypeInfo}, valuesToMatch: {string}): (boolean, Token?)
-    for _, token in tokens do
-        if (not table.find(typesToCheck, token.type)) then
-            continue;
-        end
-        if (not table.find(valuesToMatch, token.value)) then
-            return false, token;
-        end
-    end
-    return true, nil;
-end
-
-function parser.assertTokensEql(tokens: {Token}, typesToCheck: {TypeInfo}, valuesToMatch: {string}, message: string): (boolean, Token?)
+function parser.assertTokensEql(tokens: {Token}, typesToCheck: {TypeInfo}, valuesToMatch: {string}, message: string): ()
     for _, token in tokens do
         if (not table.find(typesToCheck, token.type)) then
             continue;
         end
         State.assertTokenLine(token, token.type, valuesToMatch, message);
     end
-    return true, nil;
 end
 
 function parser.assertUnexpected(tokens: {Token}, typesToCheck: {TypeInfo}): ()
